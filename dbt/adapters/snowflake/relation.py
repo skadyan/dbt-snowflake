@@ -17,6 +17,7 @@ from dbt_common.exceptions import DbtRuntimeError
 from dbt_common.events.functions import fire_event, warn_or_error
 
 from dbt.adapters.snowflake.relation_configs import (
+    RefreshMode,
     SnowflakeCatalogConfigChange,
     SnowflakeDynamicTableConfig,
     SnowflakeDynamicTableConfigChangeset,
@@ -109,7 +110,10 @@ class SnowflakeRelation(BaseRelation):
                 )
             )
 
-        if new_dynamic_table.refresh_mode != existing_dynamic_table.refresh_mode:
+        if (
+            new_dynamic_table.refresh_mode != RefreshMode.AUTO
+            and new_dynamic_table.refresh_mode != existing_dynamic_table.refresh_mode
+        ):
             config_change_collection.refresh_mode = SnowflakeDynamicTableRefreshModeConfigChange(
                 action=RelationConfigChangeAction.create,
                 context=new_dynamic_table.refresh_mode,
@@ -200,7 +204,10 @@ class SnowflakeRelation(BaseRelation):
             return ""
 
     def get_iceberg_ddl_options(self, config: RelationConfig) -> str:
-        base_location: str = f"_dbt/{self.schema}/{self.name}"
+        # If the base_location_root config is supplied, overwrite the default value ("_dbt/")
+        base_location: str = (
+            f"{config.get('base_location_root', '_dbt')}/{self.schema}/{self.name}"
+        )
 
         if subpath := config.get("base_location_subpath"):
             base_location += f"/{subpath}"

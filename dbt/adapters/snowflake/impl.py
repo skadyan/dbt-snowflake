@@ -22,6 +22,7 @@ from dbt_common.contracts.metadata import (
 from dbt_common.exceptions import CompilationError, DbtDatabaseError, DbtRuntimeError
 from dbt_common.utils import filter_null_values
 
+from dbt.adapters.snowflake import constants
 from dbt.adapters.snowflake.relation_configs import (
     SnowflakeRelationType,
     TableFormat,
@@ -53,6 +54,7 @@ class SnowflakeConfig(AdapterConfig):
     # extended formats
     table_format: Optional[str] = None
     external_volume: Optional[str] = None
+    base_location_root: Optional[str] = None
     base_location_subpath: Optional[str] = None
 
 
@@ -77,6 +79,7 @@ class SnowflakeAdapter(SQLAdapter):
             Capability.TableLastModifiedMetadata: CapabilitySupport(support=Support.Full),
             Capability.TableLastModifiedMetadataBatch: CapabilitySupport(support=Support.Full),
             Capability.GetCatalogForSingleRelation: CapabilitySupport(support=Support.Full),
+            Capability.MicrobatchConcurrency: CapabilitySupport(support=Support.Full),
         }
     )
 
@@ -92,6 +95,7 @@ class SnowflakeAdapter(SQLAdapter):
                     "benefits only those actively using it, we've made this behavior opt-in to "
                     "prevent unnecessary latency for other users."
                 ),
+                "docs_url": "https://docs.getdbt.com/reference/resource-configs/snowflake-configs#iceberg-table-format",
             }
         ]
 
@@ -256,7 +260,9 @@ class SnowflakeAdapter(SQLAdapter):
             # if the schema doesn't exist, we just want to return.
             # Alternatively, we could query the list of schemas before we start
             # and skip listing the missing ones, which sounds expensive.
-            if "Object does not exist" in str(exc):
+            # "002043 (02000)" is error code for "object does not exist or is not found"
+            # The error message text may vary across languages, but the error code is expected to be more stable
+            if "002043 (02000)" in str(exc):
                 return []
             raise
 
@@ -341,7 +347,9 @@ class SnowflakeAdapter(SQLAdapter):
         schema = parsed_model["schema"]
         database = parsed_model["database"]
         identifier = parsed_model["alias"]
-        python_version = parsed_model["config"].get("python_version", "3.8")
+        python_version = parsed_model["config"].get(
+            "python_version", constants.DEFAULT_PYTHON_VERSION_FOR_PYTHON_MODELS
+        )
 
         packages = parsed_model["config"].get("packages", [])
         imports = parsed_model["config"].get("imports", [])
